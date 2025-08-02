@@ -1,8 +1,11 @@
-use std::cmp::PartialEq;
-use std::num::ParseIntError;
-
-use micromap::Map;
 use crate::Player::P1;
+use micromap::Map;
+use std::array::IntoIter;
+use std::cmp::PartialEq;
+use std::iter::{Filter, FlatMap};
+use std::num::ParseIntError;
+use std::rc::Rc;
+use std::slice::Iter;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
@@ -74,7 +77,7 @@ pub enum ParsingErrorType {
     InvalidDiceSeparator,
     InvalidDealMove,
     UnexpectedLine,
-    EmptyString
+    EmptyString,
 }
 
 #[derive(Clone, Debug)]
@@ -101,7 +104,6 @@ pub struct MoveTuple {
 }
 
 impl MoveTuple {
-
     pub fn moves(&self) -> Vec<&Move> {
         let mut moves = vec![];
 
@@ -150,7 +152,8 @@ impl MoveTuple {
                         let d1_moves_start = d1.start_idx + 3;
                         let d1_moves_end = d2.start_idx;
 
-                        let p1_moves = collect_chars(source_line, d1_moves_start, Some(d1_moves_end));
+                        let p1_moves =
+                            collect_chars(source_line, d1_moves_start, Some(d1_moves_end));
                         let p1_moves = parse_moves(
                             &p1_moves,
                             line_no,
@@ -166,20 +169,18 @@ impl MoveTuple {
                             move_no: move_no,
                         };
 
+                        // parse d2 moves
 
-                            // parse d2 moves
-
-                            let d2_moves_start = d2.start_idx + 3;
-                            let p2_moves = collect_chars(source_line, d2_moves_start, None);
-                            mt.move_2 = Some(parse_moves(
-                                &p2_moves,
-                                line_no,
-                                DiceRoll {
-                                    dice_1: DiceValue::try_from(d2.dice_1).unwrap(),
-                                    dice_2: DiceValue::try_from(d2.dice_2).unwrap(),
-                                },
-                            )?);
-
+                        let d2_moves_start = d2.start_idx + 3;
+                        let p2_moves = collect_chars(source_line, d2_moves_start, None);
+                        mt.move_2 = Some(parse_moves(
+                            &p2_moves,
+                            line_no,
+                            DiceRoll {
+                                dice_1: DiceValue::try_from(d2.dice_1).unwrap(),
+                                dice_2: DiceValue::try_from(d2.dice_2).unwrap(),
+                            },
+                        )?);
 
                         Ok(mt)
                     }
@@ -188,8 +189,10 @@ impl MoveTuple {
                         // 1. takes followed by dice
                         // 2. dice followed by doubles
                         // 3. dice followed by nothing
-                        let collected = collect_chars(source_line, move_no_separator_start_location+1, None);
-                        let collected_split: Vec<&str> = collected.split_ascii_whitespace().collect();
+                        let collected =
+                            collect_chars(source_line, move_no_separator_start_location + 1, None);
+                        let collected_split: Vec<&str> =
+                            collected.split_ascii_whitespace().collect();
                         match *collected_split.first().unwrap() {
                             "Takes" => {
                                 // 1. takes followed by dice
@@ -210,76 +213,85 @@ impl MoveTuple {
                                     move_2: Some(p1_moves),
                                     move_no: move_no,
                                 })
-                            },
+                            }
                             _ => {
+                                if collected_split.len() >= 3 {
+                                    // 2. dice followed by doubles
+                                    let parse_error = ParsingError {
+                                        line_no: line_no,
+                                        line_pos: move_no_separator_start_location + 1,
+                                        error_type: ParsingErrorType::InvalidDealMove,
+                                    };
 
-                                    if collected_split.len() >= 3 {
-                                        // 2. dice followed by doubles
-                                        let parse_error = ParsingError {
-                                            line_no: line_no,
-                                            line_pos: move_no_separator_start_location + 1,
-                                            error_type: ParsingErrorType::InvalidDealMove,
-                                        };
+                                    let first_item = collected_split
+                                        .get(collected_split.len() - 3)
+                                        .ok_or(parse_error.clone())?;
+                                    let second_item = collected_split
+                                        .get(collected_split.len() - 2)
+                                        .ok_or(parse_error.clone())?;
 
-                                        let first_item = collected_split.get(collected_split.len() - 3).ok_or(parse_error.clone())?;
-                                        let second_item = collected_split.get(collected_split.len() - 2).ok_or(parse_error.clone())?;
+                                    if *first_item == "Doubles" && *second_item == "=>" {
+                                        let third_item =
+                                            collected_split.last().ok_or(parse_error.clone())?;
+                                        let multiplier: usize =
+                                            third_item.parse().ok().ok_or(parse_error.clone())?;
+                                        // we now know the doubles value. parse dice play and return
 
+                                        let d1_moves_start = d1.start_idx + 3;
+                                        let d1_moves_end = search_forwards_until_match(
+                                            source_line,
+                                            d1.start_idx + 3,
+                                            |c| c == 'D',
+                                        )
+                                        .unwrap();
+                                        let p1_moves = collect_chars(
+                                            source_line,
+                                            d1_moves_start,
+                                            Some(d1_moves_end),
+                                        );
+                                        let p1_moves = parse_moves(
+                                            &p1_moves,
+                                            line_no,
+                                            DiceRoll {
+                                                dice_1: DiceValue::try_from(d1.dice_1).unwrap(),
+                                                dice_2: DiceValue::try_from(d1.dice_2).unwrap(),
+                                            },
+                                        )?;
 
-                                        if *first_item == "Doubles" && *second_item == "=>" {
-                                            let third_item = collected_split.last().ok_or(parse_error.clone())?;
-                                            let multiplier: usize = third_item.parse().ok().ok_or(parse_error.clone())?;
-                                            // we now know the doubles value. parse dice play and return
-
-                                            let d1_moves_start = d1.start_idx + 3;
-                                            let d1_moves_end = search_forwards_until_match(source_line, d1.start_idx + 3, |c| c == 'D').unwrap();
-                                            let p1_moves = collect_chars(source_line, d1_moves_start, Some(d1_moves_end));
-                                            let p1_moves = parse_moves(
-                                                &p1_moves,
-                                                line_no,
-                                                DiceRoll {
-                                                    dice_1: DiceValue::try_from(d1.dice_1).unwrap(),
-                                                    dice_2: DiceValue::try_from(d1.dice_2).unwrap(),
-                                                },
-                                            )?;
-
-                                            return Ok(MoveTuple {
-                                                move_1: Some(p1_moves),
-                                                move_2: Some(Move::Double(multiplier)),
-                                                move_no: move_no,
-                                            });
-                                        }
+                                        return Ok(MoveTuple {
+                                            move_1: Some(p1_moves),
+                                            move_2: Some(Move::Double(multiplier)),
+                                            move_no: move_no,
+                                        });
                                     }
+                                }
 
-                                    // 3. dice followed by nothing
-                                    let d1_moves_start = d1.start_idx + 3;
-                                    let p1_moves = collect_chars(source_line, d1_moves_start, None);
-                                    let p1_moves = parse_moves(
-                                        &p1_moves,
-                                        line_no,
-                                        DiceRoll {
-                                            dice_1: DiceValue::try_from(d1.dice_1).unwrap(),
-                                            dice_2: DiceValue::try_from(d1.dice_2).unwrap(),
-                                        },
-                                    )?;
+                                // 3. dice followed by nothing
+                                let d1_moves_start = d1.start_idx + 3;
+                                let p1_moves = collect_chars(source_line, d1_moves_start, None);
+                                let p1_moves = parse_moves(
+                                    &p1_moves,
+                                    line_no,
+                                    DiceRoll {
+                                        dice_1: DiceValue::try_from(d1.dice_1).unwrap(),
+                                        dice_2: DiceValue::try_from(d1.dice_2).unwrap(),
+                                    },
+                                )?;
 
-                                    Ok(MoveTuple {
-                                        move_1: Some(p1_moves),
-                                        move_2: None,
-                                        move_no: move_no,
-                                    })
-
+                                Ok(MoveTuple {
+                                    move_1: Some(p1_moves),
+                                    move_2: None,
+                                    move_no: move_no,
+                                })
                             }
                         }
                     }
                 }
-
-
-
-            },
+            }
             None => {
-                let collected = collect_chars(source_line, move_no_separator_start_location+1, None);
+                let collected =
+                    collect_chars(source_line, move_no_separator_start_location + 1, None);
                 let collected_split: Vec<&str> = collected.split_ascii_whitespace().collect();
-
 
                 let parse_error = ParsingError {
                     line_no: line_no,
@@ -290,28 +302,40 @@ impl MoveTuple {
                 let split_len = collected_split.len();
 
                 match split_len {
-                    1 => {
-                        match *collected_split.get(0).unwrap() {
-                            "Takes" => Ok(MoveTuple {move_1: Some(Move::Take), move_2: None, move_no: move_no}),
-                            "Drops" => Ok(MoveTuple {move_1: Some(Move::Drop), move_2: None, move_no: move_no}),
-                            _ => Err(parse_error)
-                        }
+                    1 => match *collected_split.get(0).unwrap() {
+                        "Takes" => Ok(MoveTuple {
+                            move_1: Some(Move::Take),
+                            move_2: None,
+                            move_no: move_no,
+                        }),
+                        "Drops" => Ok(MoveTuple {
+                            move_1: Some(Move::Drop),
+                            move_2: None,
+                            move_no: move_no,
+                        }),
+                        _ => Err(parse_error),
                     },
                     3 => {
                         let third_item = collected_split.get(2).ok_or(parse_error.clone())?;
-                        let multiplier: usize = third_item.parse().ok().ok_or(parse_error.clone())?;
+                        let multiplier: usize =
+                            third_item.parse().ok().ok_or(parse_error.clone())?;
                         let first_item = collected_split.get(0).ok_or(parse_error.clone())?;
                         let second_item = collected_split.get(1).ok_or(parse_error.clone())?;
 
                         if *first_item != "Doubles" || *second_item != "=>" {
                             Err(parse_error.clone())
                         } else {
-                            Ok(MoveTuple {move_1: Some(Move::Double(multiplier)), move_2: None, move_no: move_no})
+                            Ok(MoveTuple {
+                                move_1: Some(Move::Double(multiplier)),
+                                move_2: None,
+                                move_no: move_no,
+                            })
                         }
-                    },
+                    }
                     4 => {
                         let third_item = collected_split.get(2).ok_or(parse_error.clone())?;
-                        let multiplier: usize = third_item.parse().ok().ok_or(parse_error.clone())?;
+                        let multiplier: usize =
+                            third_item.parse().ok().ok_or(parse_error.clone())?;
                         let first_item = collected_split.get(0).ok_or(parse_error.clone())?;
                         let second_item = collected_split.get(1).ok_or(parse_error.clone())?;
 
@@ -319,15 +343,22 @@ impl MoveTuple {
                             Err(parse_error.clone())
                         } else {
                             match *collected_split.get(3).unwrap() {
-                                "Takes" => Ok(MoveTuple {move_1: Some(Move::Double(multiplier)), move_2: Some(Move::Take), move_no: move_no}),
-                                "Drops" => Ok(MoveTuple {move_1: Some(Move::Double(multiplier)), move_2: Some(Move::Drop), move_no: move_no}),
-                                _ => Err(parse_error)
+                                "Takes" => Ok(MoveTuple {
+                                    move_1: Some(Move::Double(multiplier)),
+                                    move_2: Some(Move::Take),
+                                    move_no: move_no,
+                                }),
+                                "Drops" => Ok(MoveTuple {
+                                    move_1: Some(Move::Double(multiplier)),
+                                    move_2: Some(Move::Drop),
+                                    move_no: move_no,
+                                }),
+                                _ => Err(parse_error),
                             }
                         }
-                    },
+                    }
                     _ => Err(parse_error),
                 }
-
             }
         }
     }
@@ -416,9 +447,8 @@ fn parse_next_dice(
     start_idx: usize,
     line_no: usize,
 ) -> Result<ParsedDice, ParsingError> {
-
-    let move_separator_address = search_forwards_until_match(line, start_idx, |c| c == ':')
-        .ok_or(ParsingError {
+    let move_separator_address =
+        search_forwards_until_match(line, start_idx, |c| c == ':').ok_or(ParsingError {
             error_type: ParsingErrorType::NoDice,
             line_no: line_no,
             line_pos: 0,
@@ -594,9 +624,7 @@ pub struct GameState {
     pub winner: Option<(Player, usize)>,
 }
 
-
 impl GameState {
-
     pub fn new() -> GameState {
         let mut pos_map = PositionPieceMap::new();
         pos_map.insert(MovePosition::TwentyFour, 2);
@@ -654,6 +682,16 @@ impl GameState {
                 let mut pp_mut = self.get_player_positions(side).clone();
                 let mut opp_mut = self.get_player_positions(&side.other()).clone();
                 for play in plays {
+                    let p1: Vec<String> = pp_mut
+                        .iter()
+                        .filter(|(k, v)| **v >= 1)
+                        .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
+                        .collect();
+                    let p2: Vec<String> = opp_mut
+                        .iter()
+                        .filter(|(k, v)| **v >= 1)
+                        .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
+                        .collect();
                     assert!(Self::make_play_mutating(
                         &play.from,
                         &play.to,
@@ -662,6 +700,17 @@ impl GameState {
                     )
                     .is_ok());
                 }
+
+                let p1: Vec<String> = pp_mut
+                    .iter()
+                    .filter(|(k, v)| **v >= 1)
+                    .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
+                    .collect();
+                let p2: Vec<String> = opp_mut
+                    .iter()
+                    .filter(|(k, v)| **v >= 1)
+                    .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
+                    .collect();
                 match side {
                     Player::P1 => {
                         self.p1_positions = pp_mut;
@@ -702,7 +751,7 @@ impl GameState {
         self.winner = winner;
     }
 
-    fn validate_play(&self, dice_roll: &DiceRoll, plays: &Vec<Play>) -> Result<(), MoveError> {
+    pub fn validate_play(&self, dice_roll: &DiceRoll, plays: &Vec<Play>) -> Result<(), MoveError> {
         if plays.is_empty() {
             return Err(MoveError::InvalidPlayCount);
         }
@@ -718,55 +767,22 @@ impl GameState {
             })
             .unwrap_or(Player::P1);
 
-        let is_double_dice = dice_roll.is_double();
-        let possible_dice_sequences = make_dice_sequences(dice_roll);
+        let matches_any_known_play = Self::all_possible_moves(
+            dice_roll,
+            self.get_player_positions(&side),
+            self.get_player_positions(&side.other()),
+        )
+        .any(|mut sequence_iterator| {
+            let seq_collected: Vec<Play> = sequence_iterator.collect();
 
-        let dice_seq_length = if is_double_dice { 4 } else { 2 };
-        if plays.len() > dice_seq_length {
-            return Err(MoveError::InvalidPlayCount);
+            seq_collected.iter().eq(plays)
+        });
+
+        if !matches_any_known_play {
+            Err(MoveError::PlayDiceMismatch)
+        } else {
+            Ok(())
         }
-
-        let mut final_result: Result<(), MoveError> = Ok(());
-        'sequence_loop: for dice_sequence in possible_dice_sequences {
-            let mut cur_player_pos = self.get_player_positions(&side).clone();
-            let mut cur_opp_pos = self.get_player_positions(&side.other()).clone();
-            for (dice, play) in dice_sequence.iter().zip(plays) {
-                let all_possible_plays =
-                    Self::generate_possible_moves_unvalidated(&cur_player_pos, &dice);
-                let dices_fit = all_possible_plays
-                    .iter()
-                    .any(|(from, to)| play.from == *from && play.to == *to);
-                if !dices_fit {
-                    final_result = Err(MoveError::PlayDiceMismatch);
-                    continue 'sequence_loop;
-                }
-                final_result = Self::make_play_mutating(
-                    &play.from,
-                    &play.to,
-                    &mut cur_player_pos,
-                    &mut cur_opp_pos,
-                );
-                if final_result.is_err() {
-                    continue 'sequence_loop;
-                }
-                if dice_seq_length > plays.len() {
-                    let dice = dice_sequence[plays.len()];
-                    final_result = Self::validate_no_play(
-                        &DiceRoll {
-                            dice_1: dice,
-                            dice_2: dice,
-                        },
-                        &cur_player_pos,
-                        &cur_opp_pos,
-                    );
-                    if final_result.is_err() {
-                        continue 'sequence_loop;
-                    }
-                }
-            }
-        }
-
-        final_result
     }
 
     fn make_play_mutating(
@@ -782,10 +798,15 @@ impl GameState {
         player_pos_map.insert(*from, new_player_pos_val);
 
         if let Some(to_converted_to_opp_coordinates) = to.translate_to_opponent_pov() {
-            opp_pos_map.remove(&to_converted_to_opp_coordinates);
+            let v = opp_pos_map.remove(&to_converted_to_opp_coordinates);
+            if let Some(v) = v {
+                let old_player_pos_val = opp_pos_map.get(&MovePosition::Bar).unwrap_or(&0);
+                let new_player_pos_val = old_player_pos_val + 1;
+                opp_pos_map.insert(MovePosition::Bar, new_player_pos_val);
+            }
         }
 
-        let old_player_to_val = player_pos_map.get(from).unwrap_or(&0);
+        let old_player_to_val = player_pos_map.get(to).unwrap_or(&0);
         let new_player_to_val = old_player_to_val + 1;
         player_pos_map.insert(*to, new_player_to_val);
 
@@ -828,10 +849,7 @@ impl GameState {
         player_pos_map: &PositionPieceMap,
         opp_pos_map: &PositionPieceMap,
     ) -> Result<(), MoveError> {
-        let any_play_possible: bool = [&roll.dice_1, &roll.dice_2]
-            .iter()
-            .flat_map(|d| Self::generate_possible_moves_unvalidated(player_pos_map, d))
-            .any(|(from, to)| Self::can_move(&from, &to, player_pos_map, opp_pos_map).is_ok());
+        let any_play_possible: bool = Self::any_play_possible(&roll, &player_pos_map, &opp_pos_map);
 
         if any_play_possible {
             Err(MoveError::PlayPossible)
@@ -840,17 +858,105 @@ impl GameState {
         }
     }
 
-    fn generate_possible_moves_unvalidated(
+    pub fn any_play_possible(
+        roll: &DiceRoll,
         player_pos_map: &PositionPieceMap,
-        roll: &DiceValue,
-    ) -> Vec<(MovePosition, MovePosition)> {
+        opp_pos_map: &PositionPieceMap,
+    ) -> bool {
+        Self::all_possible_moves(roll, player_pos_map, opp_pos_map)
+            .next()
+            .and_then(|mut ms| ms.next())
+            .is_some()
+    }
+    fn all_possible_moves<'a>(
+        dice_sequences: &'a DiceRoll,
+        player_pos_map: &'a PositionPieceMap,
+        opp_pos_map: &'a PositionPieceMap,
+    ) -> impl Iterator<Item = impl Iterator<Item = Play>> + 'a {
+        let dice_sequences = make_dice_sequences(dice_sequences);
+        IntoIterator::into_iter(dice_sequences).flat_map(|dice_sequence| {
+            Self::all_possible_moves_with_sequence(&dice_sequence, player_pos_map, opp_pos_map)
+        })
+    }
+
+    fn all_possible_moves_with_sequence(
+        dice_sequence: &Vec<DiceValue>,
+        player_pos_map: &PositionPieceMap,
+        opp_pos_map: &PositionPieceMap,
+    ) -> impl Iterator<Item = impl Iterator<Item = Play>> {
+        let dice_sequence = dice_sequence.clone();
+        let initial_state = (player_pos_map.clone(), opp_pos_map.clone());
+        let mut queue = vec![(vec![], dice_sequence, initial_state)];
+
+        std::iter::from_fn(move || {
+            while let Some((moves_so_far, remaining_dice, state)) = queue.pop() {
+                if remaining_dice.is_empty() {
+                    let sequence = moves_so_far.clone();
+                    return Some(sequence.into_iter());
+                }
+
+                let die = remaining_dice[0];
+                let rest_dice = &remaining_dice[1..];
+                let mut moved = false;
+
+                let possible_moves = Self::generate_possible_moves_unvalidated(&die, &state.0);
+                for (from, to) in possible_moves {
+                    if Self::can_move(&from, &to, &state.0, &state.1).is_ok() {
+                        let mut new_player_map = state.0.clone();
+                        let mut new_opp_map = state.1.clone();
+
+                        let to_opponent_value = to.translate_to_opponent_pov();
+                        let is_hit = to_opponent_value
+                            .and_then(|pos| new_opp_map.get(&pos))
+                            .map(|c| *c == 1)
+                            .unwrap_or_default();
+
+                        if Self::make_play_mutating(
+                            &from,
+                            &to,
+                            &mut new_player_map,
+                            &mut new_opp_map,
+                        )
+                        .is_ok()
+                        {
+                            let mut new_moves = moves_so_far.clone();
+                            new_moves.push(Play {
+                                to: to.clone(),
+                                from: from.clone(),
+                                hit_status: if is_hit {
+                                    HitStatus::Hit
+                                } else {
+                                    HitStatus::NoHit
+                                },
+                            });
+                            let new_state = (new_player_map, new_opp_map);
+
+                            queue.push((new_moves, rest_dice.to_vec(), new_state));
+                            moved = true;
+                        }
+                    }
+                }
+
+                // If no moves possible but we made some already
+                if !moved && !moves_so_far.is_empty() {
+                    return Some(moves_so_far.into_iter());
+                }
+            }
+
+            None
+        })
+    }
+
+    fn generate_possible_moves_unvalidated<'a>(
+        roll: &'a DiceValue,
+        player_pos_map: &'a PositionPieceMap,
+    ) -> impl Iterator<Item = (MovePosition, MovePosition)> + 'a {
         player_pos_map
             .iter()
             .filter(|(_, count)| **count > 0)
             .map(|(pp, _)| (pp, pp.plus_dice(roll, true)))
             .filter(|(_, r)| r.is_ok())
             .map(|(pp, r)| (pp.clone(), r.unwrap()))
-            .collect()
     }
 
     fn can_move(
@@ -938,9 +1044,7 @@ pub struct Game {
     pub p2_points: Option<usize>,
 }
 
-
 impl Game {
-
     pub fn new() -> Self {
         Self {
             name: None,
@@ -952,15 +1056,23 @@ impl Game {
         }
     }
 
-    fn build_parsing(&mut self, res: GameParseFirstLineResult, line_no: usize) -> Result<(), ParsingError> {
+    fn build_parsing(
+        &mut self,
+        res: GameParseFirstLineResult,
+        line_no: usize,
+    ) -> Result<(), ParsingError> {
         match res {
             GameParseFirstLineResult::NsTuple(nst) => {
-                if self.p1_name.is_some() || self.p2_name.is_some() || self.p1_points.is_some() || self.p2_points.is_some() {
-                   Err(ParsingError {
-                       error_type: ParsingErrorType::UnexpectedLine,
-                       line_no,
-                       line_pos: 0,
-                   })
+                if self.p1_name.is_some()
+                    || self.p2_name.is_some()
+                    || self.p1_points.is_some()
+                    || self.p2_points.is_some()
+                {
+                    Err(ParsingError {
+                        error_type: ParsingErrorType::UnexpectedLine,
+                        line_no,
+                        line_pos: 0,
+                    })
                 } else {
                     self.p1_name = Some(nst.0.name);
                     self.p2_name = Some(nst.1.name);
@@ -970,17 +1082,25 @@ impl Game {
                 }
             }
             GameParseFirstLineResult::MoveTuple(mt) => {
-                if self.state.past_moves.len() == 1  && self.state.past_moves.last().unwrap().move_2.is_none() {
+                if self.state.past_moves.len() == 1
+                    && self.state.past_moves.last().unwrap().move_2.is_none()
+                {
                     // apply corrections TODO: remove this hack after implementing proper single move parsing
                     let new_first_move = self.state.past_moves.pop().unwrap().move_1.unwrap();
                     let mut new_state = GameState::new();
-                    new_state.add_move(Move::Skip).map_err(|ge| ParsingError::from_move_error(ge, line_no))?;
-                    new_state.add_move(new_first_move).map_err(|ge| ParsingError::from_move_error(ge, line_no))?;
+                    new_state
+                        .add_move(Move::Skip)
+                        .map_err(|ge| ParsingError::from_move_error(ge, line_no))?;
+                    new_state
+                        .add_move(new_first_move)
+                        .map_err(|ge| ParsingError::from_move_error(ge, line_no))?;
                     self.state = new_state;
                 }
 
                 for mov in mt.moves().into_iter() {
-                    self.state.add_move(mov.clone()).map_err(|ge| ParsingError::from_move_error(ge, line_no))?;
+                    self.state
+                        .add_move(mov.clone())
+                        .map_err(|ge| ParsingError::from_move_error(ge, line_no))?;
                 }
 
                 Ok(())
@@ -1002,13 +1122,11 @@ impl Game {
 
     pub fn parse(source_lines: Vec<&str>, start_line_idx: usize) -> Result<Game, ParsingError> {
         match source_lines.len() {
-            0 => {
-                Err(ParsingError {
-                    error_type: ParsingErrorType::EmptyString,
-                    line_no: start_line_idx,
-                    line_pos: 0,
-                })
-            },
+            0 => Err(ParsingError {
+                error_type: ParsingErrorType::EmptyString,
+                line_no: start_line_idx,
+                line_pos: 0,
+            }),
             _ => {
                 let mut g = Game::new();
                 for (i, line) in source_lines.iter().enumerate() {
@@ -1019,17 +1137,15 @@ impl Game {
                 }
 
                 Ok(g)
-            },
-
+            }
         }
     }
 }
 
-
 enum GameParseFirstLineResult {
     NsTuple((NameScoreTuple, NameScoreTuple)),
     MoveTuple(MoveTuple),
-    GameName(String)
+    GameName(String),
 }
 
 fn parse_first_line(line: &str, line_no: usize) -> Result<GameParseFirstLineResult, ParsingError> {
@@ -1046,10 +1162,13 @@ fn parse_first_line(line: &str, line_no: usize) -> Result<GameParseFirstLineResu
 
 struct NameScoreTuple {
     name: String,
-    score: usize
+    score: usize,
 }
 
-fn parse_scoreline(line: &str, line_no: usize) -> Result<(NameScoreTuple, NameScoreTuple), ParsingError> {
+fn parse_scoreline(
+    line: &str,
+    line_no: usize,
+) -> Result<(NameScoreTuple, NameScoreTuple), ParsingError> {
     let split: Vec<&str> = line.split_whitespace().collect();
     if split.len() != 6 {
         Err(ParsingError {
@@ -1079,9 +1198,16 @@ fn parse_scoreline(line: &str, line_no: usize) -> Result<(NameScoreTuple, NameSc
         line_pos: 0,
     })?;
 
-    Ok(
-        (NameScoreTuple { name: split[0].to_string(), score: score_1_parsed }, NameScoreTuple { score: score_2_parsed, name: split[3].to_string()})
-    )
+    Ok((
+        NameScoreTuple {
+            name: split[0].to_string(),
+            score: score_1_parsed,
+        },
+        NameScoreTuple {
+            score: score_2_parsed,
+            name: split[3].to_string(),
+        },
+    ))
 }
 
 pub struct Match {
@@ -1166,7 +1292,7 @@ impl MovePosition {
     ) -> Result<MovePosition, MoveError> {
         let dice_val = dice.arithmetic_value();
         match self {
-            MovePosition::Bar => Ok(MovePosition::from_board_number(24 - dice_val).unwrap()),
+            MovePosition::Bar => Ok(MovePosition::from_board_number(25 - dice_val).unwrap()),
             MovePosition::Off => Err(MoveError::SourceIsOff),
             _ => {
                 let pos_num = self.board_number().unwrap();
@@ -1416,16 +1542,9 @@ mod tests {
         assert!(parsed.is_ok());
         let parsed = parsed.unwrap();
         assert_eq!(parsed.move_no, 6);
-        assert_eq!(
-            parsed.move_1,
-            Some(Move::Double(2)),
-        );
-        assert_eq!(
-            parsed.move_2,
-            Some(Move::Take)
-        );
+        assert_eq!(parsed.move_1, Some(Move::Double(2)),);
+        assert_eq!(parsed.move_2, Some(Move::Take));
     }
-
 
     #[test]
     fn move_quadruple_and_noplay() {
@@ -1467,11 +1586,10 @@ mod tests {
         );
         assert_eq!(
             parsed.move_2,
-            Some(Move::CantPlay(
-                DiceRoll {
-                    dice_1: DiceValue::Four,
-                    dice_2: DiceValue::Four
-                }))
+            Some(Move::CantPlay(DiceRoll {
+                dice_1: DiceValue::Four,
+                dice_2: DiceValue::Four
+            }))
         );
     }
 
@@ -1484,31 +1602,26 @@ mod tests {
         assert_eq!(parsed.move_no, 1);
         assert_eq!(
             parsed.move_1,
-            Some(
-                Move::Plays((
-                    DiceRoll {
-                        dice_1: DiceValue::Three,
-                        dice_2: DiceValue::Two
+            Some(Move::Plays((
+                DiceRoll {
+                    dice_1: DiceValue::Three,
+                    dice_2: DiceValue::Two
+                },
+                vec![
+                    Play {
+                        hit_status: HitStatus::NoHit,
+                        from: MovePosition::TwentyFour,
+                        to: MovePosition::TwentyOne
                     },
-                    vec![
-                        Play {
-                            hit_status: HitStatus::NoHit,
-                            from: MovePosition::TwentyFour,
-                            to: MovePosition::TwentyOne
-                        },
-                        Play {
-                            hit_status: HitStatus::NoHit,
-                            from: MovePosition::Thirteen,
-                            to: MovePosition::Eleven
-                        },
-                    ]
-                ))
-            )
+                    Play {
+                        hit_status: HitStatus::NoHit,
+                        from: MovePosition::Thirteen,
+                        to: MovePosition::Eleven
+                    },
+                ]
+            )))
         );
-        assert_eq!(
-            parsed.move_2,
-            None,
-        );
+        assert_eq!(parsed.move_2, None,);
     }
 
     #[test]
@@ -1518,32 +1631,27 @@ mod tests {
         assert!(parsed.is_ok());
         let parsed = parsed.unwrap();
         assert_eq!(parsed.move_no, 8);
-        assert_eq!(
-            parsed.move_1,
-            Some(Move::Take)
-        );
+        assert_eq!(parsed.move_1, Some(Move::Take));
         assert_eq!(
             parsed.move_2,
-            Some(
-                Move::Plays((
-                    DiceRoll {
-                        dice_1: DiceValue::Five,
-                        dice_2: DiceValue::Three
+            Some(Move::Plays((
+                DiceRoll {
+                    dice_1: DiceValue::Five,
+                    dice_2: DiceValue::Three
+                },
+                vec![
+                    Play {
+                        hit_status: HitStatus::NoHit,
+                        from: MovePosition::Thirteen,
+                        to: MovePosition::Eight
                     },
-                    vec![
-                        Play {
-                            hit_status: HitStatus::NoHit,
-                            from: MovePosition::Thirteen,
-                            to: MovePosition::Eight
-                        },
-                        Play {
-                            hit_status: HitStatus::NoHit,
-                            from: MovePosition::Ten,
-                            to: MovePosition::Seven
-                        },
-                    ]
-                ))
-            )
+                    Play {
+                        hit_status: HitStatus::NoHit,
+                        from: MovePosition::Ten,
+                        to: MovePosition::Seven
+                    },
+                ]
+            )))
         );
     }
 
@@ -1554,16 +1662,8 @@ mod tests {
         assert!(parsed.is_ok());
         let parsed = parsed.unwrap();
         assert_eq!(parsed.move_no, 11);
-        assert_eq!(
-            parsed.move_1,
-            Some(Move::Double(2))
-        );
-        assert_eq!(
-            parsed.move_2,
-            Some(
-                Move::Drop
-            )
-        );
+        assert_eq!(parsed.move_1, Some(Move::Double(2)));
+        assert_eq!(parsed.move_2, Some(Move::Drop));
     }
 
     #[test]
@@ -1591,13 +1691,154 @@ mod tests {
                         from: MovePosition::Bar,
                         to: MovePosition::TwentyOne
                     },
-
                 ]
             )))
         );
-        assert_eq!(
-            parsed.move_2,
-            Some(Move::Double(2))
+        assert_eq!(parsed.move_2, Some(Move::Double(2)));
+    }
+
+    #[test]
+    fn opening_legal_moves_test() {
+        let mut state = GameState::new();
+        state.add_move(Move::Skip);
+        let roll = DiceRoll {
+            dice_1: DiceValue::Three,
+            dice_2: DiceValue::Two,
+        };
+
+        let move_1_res = state.add_move(Move::Plays((
+            roll,
+            vec![
+                Play {
+                    from: MovePosition::TwentyFour,
+                    to: MovePosition::TwentyOne,
+                    hit_status: HitStatus::NoHit,
+                },
+                Play {
+                    from: MovePosition::Thirteen,
+                    to: MovePosition::Eleven,
+                    hit_status: HitStatus::NoHit,
+                },
+            ],
+        )));
+
+        assert!(move_1_res.is_ok());
+        assert_eq!(state.p2_positions.get(&MovePosition::Thirteen), Some(&4));
+        assert_eq!(state.p2_positions.get(&MovePosition::TwentyFour), Some(&1));
+        assert_eq!(state.p2_positions.get(&MovePosition::TwentyOne), Some(&1));
+        assert_eq!(state.p2_positions.get(&MovePosition::Eleven), Some(&1));
+    }
+
+    #[test]
+    fn response_legal_moves_test() {
+        let mut state = GameState::new();
+        assert!(state.add_move(Move::Skip).is_ok());
+        let roll = DiceRoll {
+            dice_1: DiceValue::Three,
+            dice_2: DiceValue::Two,
+        };
+
+        assert!(state
+            .add_move(Move::Plays((
+                roll,
+                vec![
+                    Play {
+                        from: MovePosition::TwentyFour,
+                        to: MovePosition::TwentyOne,
+                        hit_status: HitStatus::NoHit
+                    },
+                    Play {
+                        from: MovePosition::Thirteen,
+                        to: MovePosition::Eleven,
+                        hit_status: HitStatus::NoHit
+                    }
+                ]
+            )))
+            .is_ok());
+
+        let roll = DiceRoll {
+            dice_1: DiceValue::Five,
+            dice_2: DiceValue::Two,
+        };
+
+        let p1: Vec<String> = state
+            .p1_positions
+            .iter()
+            .filter(|(k, v)| **v >= 1)
+            .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
+            .collect();
+        let p2: Vec<String> = state
+            .p2_positions
+            .iter()
+            .filter(|(k, v)| **v >= 1)
+            .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
+            .collect();
+        let res = GameState::can_move(
+            &MovePosition::Six,
+            &MovePosition::Four,
+            &state.p1_positions,
+            &state.p2_positions,
         );
+        let all_possible_moves_collected: Vec<Vec<Play>> =
+            GameState::all_possible_moves(&roll, &state.p1_positions, &state.p2_positions)
+                .into_iter()
+                .map(|mv| mv.collect())
+                .collect();
+        let move_2_res = state.add_move(Move::Plays((
+            roll,
+            vec![
+                Play {
+                    from: MovePosition::Thirteen,
+                    to: MovePosition::Eight,
+                    hit_status: HitStatus::NoHit,
+                },
+                Play {
+                    from: MovePosition::Six,
+                    to: MovePosition::Four,
+                    hit_status: HitStatus::Hit,
+                },
+            ],
+        )));
+        assert!(move_2_res.is_ok());
+
+        let roll = DiceRoll {
+            dice_1: DiceValue::Five,
+            dice_2: DiceValue::Four,
+        };
+
+        let res = GameState::can_move(
+            &MovePosition::Thirteen,
+            &MovePosition::Eight,
+            &state.p2_positions,
+            &state.p1_positions,
+        );
+        let res2 = GameState::can_move(
+            &MovePosition::Bar,
+            &MovePosition::TwentyOne,
+            &state.p2_positions,
+            &state.p1_positions,
+        );
+        let all_possible_moves_collected: Vec<Vec<Play>> =
+            GameState::all_possible_moves(&roll, &state.p2_positions, &state.p1_positions)
+                .into_iter()
+                .map(|mv| mv.collect())
+                .collect();
+
+        let move_3_res = state.add_move(Move::Plays((
+            roll,
+            vec![
+                Play {
+                    from: MovePosition::Bar,
+                    to: MovePosition::TwentyOne,
+                    hit_status: HitStatus::Hit,
+                },
+                Play {
+                    from: MovePosition::Thirteen,
+                    to: MovePosition::Eight,
+                    hit_status: HitStatus::NoHit,
+                },
+            ],
+        )));
+        assert!(move_3_res.is_ok());
     }
 }
