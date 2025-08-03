@@ -107,7 +107,7 @@ impl ParsingError {
     }
 }
 
-fn parse_move_tuple(source_line: &str, line_no: usize) -> Result<MoveTuple, ParsingError> {
+pub fn parse_move_tuple(source_line: &str, line_no: usize) -> Result<MoveTuple, ParsingError> {
     let move_no_separator_start_location =
         search_forwards_until_match(source_line, 0, |c| c == ')').ok_or(ParsingError {
             error_type: ParsingErrorType::NoMoveNumber,
@@ -544,7 +544,7 @@ impl GameParser {
     }
 }
 
-fn parse_next_dice(
+pub fn parse_next_dice(
     line: &str,
     start_idx: usize,
     line_no: usize,
