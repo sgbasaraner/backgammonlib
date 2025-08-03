@@ -140,17 +140,7 @@ impl GameState {
             return Err(MoveError::GameEnded);
         }
         self.validate_answer_issues(&candidate)?;
-        let side: Player = self
-            .past_moves
-            .last()
-            .map(|m| {
-                if m.move_2.is_some() {
-                    Player::P1
-                } else {
-                    Player::P2
-                }
-            })
-            .unwrap_or(Player::P1);
+        let side = self.get_side_to_play();
         match &candidate {
             Move::Skip => {
                 if side == Player::P2 || !self.past_moves.is_empty() {
@@ -171,6 +161,21 @@ impl GameState {
         self.apply_move(candidate, &side);
 
         Ok(())
+    }
+
+    fn get_side_to_play(&self) -> Player {
+        let side: Player = self
+            .past_moves
+            .last()
+            .map(|m| {
+                if m.move_2.is_some() {
+                    Player::P1
+                } else {
+                    Player::P2
+                }
+            })
+            .unwrap_or(Player::P1);
+        side
     }
 
     fn apply_move(&mut self, mov: Move, side: &Player) {
@@ -242,17 +247,7 @@ impl GameState {
             return Err(MoveError::InvalidPlayCount);
         }
         let side: Player = self
-            .past_moves
-            .last()
-            .map(|m| {
-                if m.move_2.is_some() {
-                    Player::P1
-                } else {
-                    Player::P2
-                }
-            })
-            .unwrap_or(Player::P1);
-
+            .get_side_to_play();
         let player_positions = self.get_player_positions(&side);
         let opp_positions = self.get_player_positions(&side.other());
 
@@ -314,11 +309,8 @@ impl GameState {
         let have_to_answer = match last_move {
             Some(m) => match m {
                 Move::Double(next_multiplier) => {
-                    if *next_multiplier == self.multiplier * 2 {
-                        true
-                    } else {
-                        return Err(MoveError::IllegalDouble);
-                    }
+                    self.validate_double(*next_multiplier)?;
+                    true
                 }
                 _ => false,
             },
@@ -353,6 +345,49 @@ impl GameState {
         }
     }
 
+    fn validate_double(
+        &self,
+        multiplier: usize,
+    ) -> Result<(), MoveError> {
+        let side_to_play = self.get_side_to_play();
+        let mut last_doubler: Option<Player> = None;
+
+        for mov in self.past_moves.iter().rev() {
+            match mov.move_2.as_ref() {
+                None => {}
+                Some(m) => match m {
+                    Move::Double(_) => {
+                        last_doubler = Some(Player::P2);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            match mov.move_1.as_ref() {
+                None => {}
+                Some(m) => match m {
+                    Move::Double(_) => {
+                        last_doubler = Some(Player::P1);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+
+        if last_doubler == Some(side_to_play) {
+            Err(MoveError::IllegalDouble)
+        } else {
+            if multiplier == self.multiplier * 2 {
+                Ok(())
+            } else {
+                Err(MoveError::IllegalDouble)
+            }
+        }
+
+    }
+
     pub fn any_play_possible(
         roll: &DiceRoll,
         player_pos_map: &PositionPieceMap,
@@ -363,6 +398,30 @@ impl GameState {
             .and_then(|mut ms| ms.next())
             .is_some()
     }
+
+
+
+    // pub fn all_possible_actions(&self, dice_roll: &DiceRoll) -> Vec<Move> {
+    //     if let Some(lm) = self.last_move() {
+    //         match lm {
+    //             Move::Double(_) => {
+    //                 return vec![Move::Take, Move::Drop];
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+    //
+    //     // let all_possible_actions = vec![
+    //     //     Move::Drop,
+    //     //     Move::Double(self.multiplier * 2),
+    //     //     Move::Take,
+    //     //     Move::CantPlay(dice_roll.clone()),
+    //     //     Move::
+    //     // ]
+    //
+    //
+    // }
+
     fn all_possible_moves<'a>(
         dice_sequences: &'a DiceRoll,
         player_pos_map: &'a PositionPieceMap,
