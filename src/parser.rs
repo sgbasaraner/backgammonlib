@@ -589,7 +589,7 @@ pub fn parse_next_dice(
     })
 }
 
-struct ParsedDice {
+pub struct ParsedDice {
     start_idx: usize,
     pub dice_1: u8,
     pub dice_2: u8,
