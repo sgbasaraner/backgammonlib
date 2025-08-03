@@ -101,6 +101,7 @@ pub enum MoveError {
     TargetOutOfBounds,
     TargetIsBar,
     SourceIsOff,
+    GameEnded,
     NoPieceInSource,
     TargetOccupied,
     IllegalBearOff,
@@ -135,6 +136,9 @@ impl GameState {
     }
 
     pub fn add_move(&mut self, candidate: Move) -> Result<(), MoveError> {
+        if self.winner.is_some() {
+            return Err(MoveError::GameEnded);
+        }
         self.validate_answer_issues(&candidate)?;
         let side: Player = self
             .past_moves
@@ -185,6 +189,14 @@ impl GameState {
                     .is_ok());
                 }
 
+                if pp_mut.piece_count_at(&MovePosition::Off) > 0 && pp_mut.non_empty_position_count() == 1 {
+                    // game won
+                    let opponent_borne_any = opp_mut.piece_count_at(&MovePosition::Off) > 0;
+                    let game_result_multiplier = if opponent_borne_any { 1 } else { 2 };
+                    let score = self.multiplier * game_result_multiplier;
+                    winner = Some((side.clone(), score))
+                }
+
                 match side {
                     Player::P1 => {
                         self.p1_positions = pp_mut;
@@ -195,7 +207,7 @@ impl GameState {
                         self.p2_positions = pp_mut;
                     }
                 }
-                // todo: check for wins
+
             }
             Move::Take => self.multiplier *= 2,
             Move::Drop => winner = Some((side.other(), self.multiplier)),
@@ -811,9 +823,9 @@ mod tests {
         let mut two_pieces_in_bar_map = PositionPieceMapInner::new();
         two_pieces_in_bar_map.insert(MovePosition::One, 2);
 
-        let state = GameState {
+        let mut state = GameState {
             past_moves: vec![],
-            multiplier: 0,
+            multiplier: 1,
             p1_positions: PositionPieceMap::from_inner(two_pieces_in_bar_map),
             p2_positions: PositionPieceMap::empty(),
             winner: None,
@@ -838,6 +850,18 @@ mod tests {
                 );
             }
         }
+
+        state.add_move(Move::Plays((roll, vec![Play {
+            from: MovePosition::One,
+            to: MovePosition::Off,
+            hit_status: HitStatus::NoHit
+        }, Play {
+            from: MovePosition::One,
+            to: MovePosition::Off,
+            hit_status: HitStatus::NoHit
+        }]))).unwrap();
+
+        assert_eq!(state.winner, Some((Player::P1, 2)));
     }
 
     #[test]
