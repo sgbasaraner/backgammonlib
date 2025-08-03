@@ -165,8 +165,6 @@ impl GameState {
         };
 
         self.apply_move(candidate, &side);
-        let cur_player_pos = self.get_player_positions(&side).debug_serialize();
-        let cur_opp_pos = self.get_player_positions(&side.other()).debug_serialize();
 
         Ok(())
     }
@@ -174,12 +172,10 @@ impl GameState {
     fn apply_move(&mut self, mov: Move, side: &Player) {
         let mut winner: Option<(Player, usize)> = None;
         match &mov {
-            Move::Plays((d, plays)) => {
+            Move::Plays((_, plays)) => {
                 let mut pp_mut = self.get_player_positions(side).clone();
                 let mut opp_mut = self.get_player_positions(&side.other()).clone();
                 for play in plays {
-                    let p1: Vec<String> = pp_mut.debug_serialize();
-                    let p2: Vec<String> = opp_mut.debug_serialize();
                     assert!(Self::make_play_mutating(
                         &play.from,
                         &play.to,
@@ -189,8 +185,6 @@ impl GameState {
                     .is_ok());
                 }
 
-                let p1: Vec<String> = pp_mut.debug_serialize();
-                let p2: Vec<String> = opp_mut.debug_serialize();
                 match side {
                     Player::P1 => {
                         self.p1_positions = pp_mut;
@@ -252,21 +246,21 @@ impl GameState {
 
         let matches_any_known_play =
             Self::all_possible_moves(dice_roll, player_positions, opp_positions).any(
-                |mut sequence_iterator| {
+                |sequence_iterator| {
                     let seq_collected: Vec<Play> = sequence_iterator.collect();
 
                     seq_collected.iter().eq(plays)
                 },
             );
 
-        let all_possible_moves_collected: Vec<Vec<Play>> =
-            GameState::all_possible_moves(&dice_roll, player_positions, opp_positions)
-                .into_iter()
-                .map(|mv| mv.collect())
-                .collect();
-
-        let pp_1: Vec<String> = player_positions.debug_serialize();
-        let pp_opp: Vec<String> = opp_positions.debug_serialize();
+        // let all_possible_moves_collected: Vec<Vec<Play>> =
+        //     GameState::all_possible_moves(&dice_roll, player_positions, opp_positions)
+        //         .into_iter()
+        //         .map(|mv| mv.collect())
+        //         .collect();
+        //
+        // let pp_1: Vec<String> = player_positions.debug_serialize();
+        // let pp_opp: Vec<String> = opp_positions.debug_serialize();
 
         if !matches_any_known_play {
             Err(MoveError::PlayDiceMismatch(dice_roll.clone()))
@@ -747,7 +741,7 @@ mod tests {
     #[test]
     fn opening_legal_moves_test() {
         let mut state = GameState::new();
-        state.add_move(Move::Skip);
+        state.add_move(Move::Skip).unwrap();
         let roll = DiceRoll {
             dice_1: DiceValue::Three,
             dice_2: DiceValue::Two,
@@ -849,11 +843,6 @@ mod tests {
     #[test]
     fn correct_positions_test() {
         let mut state = GameState::new();
-
-        let roll = DiceRoll {
-            dice_1: DiceValue::Three,
-            dice_2: DiceValue::Two,
-        };
 
         state.add_move(Move::Skip).unwrap();
         state
@@ -1062,24 +1051,6 @@ mod tests {
             dice_2: DiceValue::Two,
         };
 
-        let p1: Vec<String> = state
-            .p1_positions
-            .iter()
-            .filter(|(k, v)| **v >= 1)
-            .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
-            .collect();
-        let p2: Vec<String> = state
-            .p2_positions
-            .iter()
-            .filter(|(k, v)| **v >= 1)
-            .map(|(k, v)| format!("{:?}, {:?}", k.board_number(), v))
-            .collect();
-
-        let all_possible_moves_collected: Vec<Vec<Play>> =
-            GameState::all_possible_moves(&roll, &state.p1_positions, &state.p2_positions)
-                .into_iter()
-                .map(|mv| mv.collect())
-                .collect();
         let move_2_res = state.add_move(Move::Plays((
             roll,
             vec![
@@ -1101,12 +1072,6 @@ mod tests {
             dice_1: DiceValue::Five,
             dice_2: DiceValue::Four,
         };
-
-        let all_possible_moves_collected: Vec<Vec<Play>> =
-            GameState::all_possible_moves(&roll, &state.p2_positions, &state.p1_positions)
-                .into_iter()
-                .map(|mv| mv.collect())
-                .collect();
 
         let move_3_res = state.add_move(Move::Plays((
             roll,

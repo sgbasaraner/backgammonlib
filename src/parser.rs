@@ -47,13 +47,13 @@ fn parse_scoreline(
         })?
     }
 
-    let score_1_parsed: usize = split[2].parse().map_err(|e| ParsingError {
+    let score_1_parsed: usize = split[2].parse().map_err(|_e| ParsingError {
         error_type: ParsingErrorType::UnexpectedLine,
         line_no,
         line_pos: 0,
     })?;
 
-    let score_2_parsed: usize = split[5].parse().map_err(|e| ParsingError {
+    let score_2_parsed: usize = split[5].parse().map_err(|_e| ParsingError {
         error_type: ParsingErrorType::UnexpectedLine,
         line_no,
         line_pos: 0,
@@ -321,7 +321,7 @@ fn parse_move_tuple(source_line: &str, line_no: usize) -> Result<MoveTuple, Pars
                     let first_item = collected_split.get(0).ok_or(parse_error.clone())?;
 
                     // TODO: remove when proper wins parsing is implemented
-                    if (*first_item == "Drops") {
+                    if *first_item == "Drops" {
                         return Ok(MoveTuple {
                             move_1: Some(Move::Drop),
                             move_2: None,
