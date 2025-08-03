@@ -52,7 +52,7 @@ impl DiceRoll {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MoveTuple {
     pub move_no: usize,
     pub move_1: Option<Move>,
@@ -109,7 +109,7 @@ pub enum MoveError {
     PlayDiceMismatch(DiceRoll),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GameState {
     pub past_moves: Vec<MoveTuple>,
     pub multiplier: usize,
