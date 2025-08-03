@@ -591,8 +591,8 @@ pub fn parse_next_dice(
 
 struct ParsedDice {
     start_idx: usize,
-    dice_1: u8,
-    dice_2: u8,
+    pub dice_1: u8,
+    pub dice_2: u8,
 }
 
 fn check_dice_at_address(
