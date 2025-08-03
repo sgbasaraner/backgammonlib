@@ -401,26 +401,38 @@ impl GameState {
 
 
 
-    // pub fn all_possible_actions(&self, dice_roll: &DiceRoll) -> Vec<Move> {
-    //     if let Some(lm) = self.last_move() {
-    //         match lm {
-    //             Move::Double(_) => {
-    //                 return vec![Move::Take, Move::Drop];
-    //             }
-    //             _ => {}
-    //         }
-    //     }
-    //
-    //     // let all_possible_actions = vec![
-    //     //     Move::Drop,
-    //     //     Move::Double(self.multiplier * 2),
-    //     //     Move::Take,
-    //     //     Move::CantPlay(dice_roll.clone()),
-    //     //     Move::
-    //     // ]
-    //
-    //
-    // }
+    pub fn all_possible_actions(&self, dice_roll: &DiceRoll) -> Vec<Move> {
+        if let Some(lm) = self.last_move() {
+            match lm {
+                Move::Double(_) => {
+                    return vec![Move::Take, Move::Drop];
+                }
+                _ => {}
+            }
+        }
+
+        let mut all_possible_actions = if self.validate_double(self.multiplier * 2).is_ok() {
+            vec![
+                Move::Double(self.multiplier * 2)
+            ]
+        } else {
+            Vec::new()
+        };
+
+        let side = self.get_side_to_play();
+        let mut possible_moves_iter = Self::all_possible_moves(dice_roll, self.get_player_positions(&side), self.get_player_positions(&side.other()));
+        let mut no_moves_possible = true;
+        for mov in possible_moves_iter {
+            no_moves_possible = false;
+            all_possible_actions.push(Move::Plays((dice_roll.clone(), mov.collect())))
+        }
+
+        if no_moves_possible {
+            all_possible_actions.push(Move::CantPlay(dice_roll.clone()));
+        }
+
+        all_possible_actions
+    }
 
     fn all_possible_moves<'a>(
         dice_sequences: &'a DiceRoll,
