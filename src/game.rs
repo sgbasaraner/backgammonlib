@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use crate::parser::ParsingErrorType;
 use crate::piece_map::PositionPieceMap;
 
@@ -75,7 +76,7 @@ impl MoveTuple {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Hash)]
 pub enum Player {
     P1,
     P2,
@@ -116,6 +117,15 @@ pub struct GameState {
     pub p1_positions: PositionPieceMap,
     pub p2_positions: PositionPieceMap,
     pub winner: Option<(Player, usize)>,
+}
+
+impl Hash for GameState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.multiplier.hash(state);
+        self.p1_positions.hash(state);
+        self.p2_positions.hash(state);
+        self.winner.hash(state);
+    }
 }
 
 impl Default for GameState {

@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use crate::game::MovePosition;
 use micromap::Map;
 
@@ -6,6 +7,19 @@ pub type PositionPieceMapInner = Map<MovePosition, u8, 26>;
 #[derive(Debug, Clone)]
 pub struct PositionPieceMap {
     inner: PositionPieceMapInner,
+}
+
+impl Hash for PositionPieceMap {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let mut pairs: Vec<(&MovePosition, &u8)> = self.iter().collect();
+        pairs.sort_by(|a, b| a.0.board_number().cmp(&b.0.board_number()));
+
+        for p in pairs {
+            p.0.board_number().hash(state);
+            p.1.hash(state);
+        }
+
+    }
 }
 
 impl Default for PositionPieceMap {
