@@ -357,7 +357,7 @@ pub fn parse_move_tuple(source_line: &str, line_no: usize) -> Result<MoveTuple, 
     }
 }
 
-fn parse_moves(line: &str, line_no: usize, dice_roll: DiceRoll) -> Result<Move, ParsingError> {
+pub fn parse_moves(line: &str, line_no: usize, dice_roll: DiceRoll) -> Result<Move, ParsingError> {
     let mut plays: Vec<Play> = Vec::new();
     let split = line.trim().split_ascii_whitespace();
 
