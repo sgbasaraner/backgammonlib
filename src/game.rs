@@ -163,7 +163,7 @@ impl GameState {
         Ok(())
     }
 
-    fn get_side_to_play(&self) -> Player {
+    pub fn get_side_to_play(&self) -> Player {
         let side: Player = self
             .past_moves
             .last()
