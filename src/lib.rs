@@ -1,3 +1,3 @@
-mod game;
-mod parser;
-mod piece_map;
+pub mod game;
+pub mod parser;
+pub mod piece_map;
