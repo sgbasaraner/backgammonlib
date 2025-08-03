@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use crate::parser::ParsingErrorType;
 use crate::piece_map::PositionPieceMap;
 
@@ -126,6 +126,22 @@ impl Hash for GameState {
         self.p2_positions.hash(state);
         self.winner.hash(state);
     }
+}
+
+impl PartialEq<Self> for GameState {
+    fn eq(&self, other: &Self) -> bool {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        let self_h = hasher.finish();
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        let other_h = hasher.finish();
+        self_h == other_h
+    }
+}
+
+impl Eq for GameState {
+
 }
 
 impl Default for GameState {
